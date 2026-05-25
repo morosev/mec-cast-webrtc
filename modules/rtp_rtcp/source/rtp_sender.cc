@@ -123,6 +123,7 @@ bool IsNonVolatile(RTPExtensionType type) {
     case kRtpExtensionMid:
     case kRtpExtensionGenericFrameDescriptor:
     case kRtpExtensionDependencyDescriptor:
+    case kRtpExtensionSendTimestampNs:
       return true;
     case kRtpExtensionInbandComfortNoise:
     case kRtpExtensionAbsoluteCaptureTime:
@@ -529,6 +530,7 @@ std::unique_ptr<RtpPacketToSend> RTPSender::AllocatePacket(
   packet->ReserveExtension<AbsoluteSendTime>();
   packet->ReserveExtension<TransmissionOffset>();
   packet->ReserveExtension<TransportSequenceNumber>();
+  packet->ReserveExtension<SendTimestampNsExtension>();
 
   // BUNDLE requires that the receiver "bind" the received SSRC to the values
   // in the MID and/or (R)RID header extensions if present. Therefore, the

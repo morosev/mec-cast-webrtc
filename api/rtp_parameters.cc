@@ -247,7 +247,8 @@ bool RtpExtension::IsSupportedForVideo(absl::string_view uri) {
          uri == RtpExtension::kRepairedRidUri ||
          uri == RtpExtension::kVideoLayersAllocationUri ||
          uri == RtpExtension::kVideoFrameTrackingIdUri ||
-         uri == RtpExtension::kCorruptionDetectionUri;
+         uri == RtpExtension::kCorruptionDetectionUri ||
+         uri == RtpExtension::kSendTimestampNsUri;
 }
 
 bool RtpExtension::IsEncryptionSupported(absl::string_view uri) {

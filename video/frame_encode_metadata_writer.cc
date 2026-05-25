@@ -194,18 +194,9 @@ void FrameEncodeMetadataWriter::FillMetadataAndTimingInfo(
     }
 
     // Check if it's time to send a timing frame.
-    int64_t timing_frame_delay_ms =
-        encoded_image->capture_time_ms_ - last_timing_frame_time_ms_;
-    // Trigger threshold if it's a first frame, too long passed since the last
-    // timing frame, or we already sent timing frame on a different simulcast
-    // stream with the same capture time.
-    if (last_timing_frame_time_ms_ == -1 ||
-        timing_frame_delay_ms >=
-            codec_settings_.timing_frame_thresholds.delay_ms ||
-        timing_frame_delay_ms == 0) {
-      timing_flags |= VideoSendTiming::kTriggeredByTimer;
-      last_timing_frame_time_ms_ = encoded_image->capture_time_ms_;
-    }
+    // Force every frame to be a timing frame for continuous delay measurement.
+    timing_flags |= VideoSendTiming::kTriggeredByTimer;
+    last_timing_frame_time_ms_ = encoded_image->capture_time_ms_;
 
     // If encode start is not available that means that encoder uses internal
     // source. In that case capture timestamp may be from a different clock with

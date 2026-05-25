@@ -214,6 +214,9 @@ void VCMDecodedFrameCallback::Decoded(VideoFrame& decodedImage,
     RTC_HISTOGRAM_COUNTS_1000(
         "WebRTC.Video.GenericDecoder.EncodeDelay",
         timing_frame_info.encode_finish_ms - timing_frame_info.encode_start_ms);
+    // Propagate encode duration to the decoded VideoFrame for external measurement
+    decodedImage.set_encode_duration_ms(
+        timing_frame_info.encode_finish_ms - timing_frame_info.encode_start_ms);
     RTC_HISTOGRAM_COUNTS_1000(
         "WebRTC.Video.GenericDecoder.PacerAndPacketizationDelay",
         timing_frame_info.pacer_exit_ms - timing_frame_info.encode_finish_ms);

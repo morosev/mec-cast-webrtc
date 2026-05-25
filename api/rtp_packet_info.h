@@ -91,6 +91,22 @@ class RTC_EXPORT RtpPacketInfo {
     return *this;
   }
 
+  std::optional<uint64_t> send_timestamp_ns() const {
+    return send_timestamp_ns_;
+  }
+  RtpPacketInfo& set_send_timestamp_ns(std::optional<uint64_t> value) {
+    send_timestamp_ns_ = value;
+    return *this;
+  }
+
+  std::optional<uint64_t> capture_timestamp_ns() const {
+    return capture_timestamp_ns_;
+  }
+  RtpPacketInfo& set_capture_timestamp_ns(std::optional<uint64_t> value) {
+    capture_timestamp_ns_ = value;
+    return *this;
+  }
+
   friend bool operator==(const RtpPacketInfo& lhs, const RtpPacketInfo& rhs);
 
  private:
@@ -118,6 +134,10 @@ class RTC_EXPORT RtpPacketInfo {
   // capturer. The following holds:
   //   Capture's NTP Clock = Local NTP Clock + Local-Capture Clock Offset
   std::optional<TimeDelta> local_capture_clock_offset_;
+
+  // Nanosecond timestamps from the custom SendTimestampNs RTP extension
+  std::optional<uint64_t> send_timestamp_ns_;
+  std::optional<uint64_t> capture_timestamp_ns_;
 };
 
 }  // namespace webrtc

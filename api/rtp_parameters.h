@@ -498,6 +498,11 @@ struct RTC_EXPORT RtpExtension {
   static constexpr char kCorruptionDetectionUri[] =
       "http://www.webrtc.org/experiments/rtp-hdrext/corruption-detection";
 
+  // Header extension for nanosecond send timestamp (PTP-synced clocks).
+  // Carries 8 bytes: uint64 nanoseconds since Unix epoch at RTP send time.
+  static constexpr char kSendTimestampNsUri[] =
+      "http://www.mec-cast.org/experiments/rtp-hdrext/send-timestamp-ns";
+
   // Inclusive min and max IDs for two-byte header extensions and one-byte
   // header extensions, per RFC8285 Section 4.2-4.3.
   static constexpr int kMinId = 1;

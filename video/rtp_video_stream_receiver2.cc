@@ -586,6 +586,13 @@ bool RtpVideoStreamReceiver2::OnReceivedPayloadData(
                 packet_info.absolute_capture_time()
                     ->estimated_capture_clock_offset)));
   }
+
+  SendTimestampNsData send_ts_data;
+  if (rtp_packet.GetExtension<SendTimestampNsExtension>(&send_ts_data)) {
+    packet_info.set_capture_timestamp_ns(send_ts_data.capture_ns);
+    packet_info.set_send_timestamp_ns(send_ts_data.send_ns);
+  }
+
   RTPVideoHeader& video_header = packet->video_header;
   video_header.rotation = kVideoRotation_0;
   video_header.content_type = VideoContentType::UNSPECIFIED;

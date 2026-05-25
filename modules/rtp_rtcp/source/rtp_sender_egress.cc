@@ -16,6 +16,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <time.h>
 #include <utility>
 #include <vector>
 
@@ -99,6 +100,7 @@ void RtpSenderEgress::NonPacedPacketSender::PrepareForSend(
   }
   packet->ReserveExtension<TransmissionOffset>();
   packet->ReserveExtension<AbsoluteSendTime>();
+  packet->ReserveExtension<SendTimestampNsExtension>();
 }
 
 RtpSenderEgress::RtpSenderEgress(const Environment& env,
@@ -228,6 +230,25 @@ void RtpSenderEgress::SendPacket(std::unique_ptr<RtpPacketToSend> packet,
   if (packet->HasExtension<AbsoluteSendTime>()) {
     packet->SetExtension<AbsoluteSendTime>(AbsoluteSendTime::To24Bits(
         env_.clock().ConvertTimestampToNtpTime(now)));
+  }
+  if (packet->HasExtension<SendTimestampNsExtension>()) {
+    struct timespec ts_rt, ts_mono;
+    clock_gettime(CLOCK_REALTIME, &ts_rt);
+    clock_gettime(CLOCK_MONOTONIC, &ts_mono);
+    uint64_t realtime_ns = static_cast<uint64_t>(ts_rt.tv_sec) * 1000000000ULL +
+                           static_cast<uint64_t>(ts_rt.tv_nsec);
+    uint64_t monotonic_ns = static_cast<uint64_t>(ts_mono.tv_sec) * 1000000000ULL +
+                            static_cast<uint64_t>(ts_mono.tv_nsec);
+    // Compute capture_ns: convert monotonic capture_time to realtime
+    uint64_t capture_ns = 0;
+    if (packet->capture_time().IsFinite() && packet->capture_time().us() > 0) {
+      uint64_t capture_mono_ns = static_cast<uint64_t>(packet->capture_time().us()) * 1000ULL;
+      // realtime = monotonic + (realtime_now - monotonic_now)
+      int64_t rt_mono_offset = static_cast<int64_t>(realtime_ns) - static_cast<int64_t>(monotonic_ns);
+      capture_ns = static_cast<uint64_t>(static_cast<int64_t>(capture_mono_ns) + rt_mono_offset);
+    }
+    SendTimestampNsData ts_data{capture_ns, realtime_ns};
+    packet->SetExtension<SendTimestampNsExtension>(ts_data);
   }
   if (packet->HasExtension<TransportSequenceNumber>() &&
       packet->transport_sequence_number()) {

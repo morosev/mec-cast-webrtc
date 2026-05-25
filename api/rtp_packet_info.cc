@@ -44,6 +44,12 @@ RtpPacketInfo::RtpPacketInfo(const RtpPacketReceived& rtp_packet)
   if (rtp_packet.GetExtension<AbsoluteCaptureTimeExtension>(&capture_time)) {
     absolute_capture_time_ = std::move(capture_time);
   }
+
+  SendTimestampNsData send_ts_data;
+  if (rtp_packet.GetExtension<SendTimestampNsExtension>(&send_ts_data)) {
+    capture_timestamp_ns_ = send_ts_data.capture_ns;
+    send_timestamp_ns_ = send_ts_data.send_ns;
+  }
 }
 
 RtpPacketInfo::RtpPacketInfo(uint32_t ssrc,

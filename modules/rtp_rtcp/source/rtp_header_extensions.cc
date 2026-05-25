@@ -836,4 +836,41 @@ bool VideoFrameTrackingIdExtension::Write(std::span<uint8_t> data,
   return true;
 }
 
+// SendTimestampNsExtension
+//
+// Carries capture_ns and send_ns (16 bytes total) for precise delay measurement.
+// Both are nanoseconds since Unix epoch (CLOCK_REALTIME).
+// Requires PTP-synchronized clocks for meaningful one-way delay measurement.
+bool SendTimestampNsExtension::Parse(std::span<const uint8_t> data,
+                                     SendTimestampNsData* out) {
+  if (data.size() != kValueSizeBytes) {
+    return false;
+  }
+  out->capture_ns =
+      (static_cast<uint64_t>(ByteReader<uint32_t>::ReadBigEndian(data.data()))
+       << 32) |
+      static_cast<uint64_t>(
+          ByteReader<uint32_t>::ReadBigEndian(data.data() + 4));
+  out->send_ns =
+      (static_cast<uint64_t>(ByteReader<uint32_t>::ReadBigEndian(data.data() + 8))
+       << 32) |
+      static_cast<uint64_t>(
+          ByteReader<uint32_t>::ReadBigEndian(data.data() + 12));
+  return true;
+}
+
+bool SendTimestampNsExtension::Write(std::span<uint8_t> data,
+                                     const SendTimestampNsData& ts) {
+  RTC_DCHECK_EQ(data.size(), kValueSizeBytes);
+  ByteWriter<uint32_t>::WriteBigEndian(data.data(),
+                                       static_cast<uint32_t>(ts.capture_ns >> 32));
+  ByteWriter<uint32_t>::WriteBigEndian(data.data() + 4,
+                                       static_cast<uint32_t>(ts.capture_ns));
+  ByteWriter<uint32_t>::WriteBigEndian(data.data() + 8,
+                                       static_cast<uint32_t>(ts.send_ns >> 32));
+  ByteWriter<uint32_t>::WriteBigEndian(data.data() + 12,
+                                       static_cast<uint32_t>(ts.send_ns));
+  return true;
+}
+
 }  // namespace webrtc

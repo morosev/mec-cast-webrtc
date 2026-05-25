@@ -378,5 +378,29 @@ class VideoFrameTrackingIdExtension {
   static bool Write(std::span<uint8_t> data, uint16_t video_frame_tracking_id);
 };
 
+// Extension carrying nanosecond timestamps for precise delay measurement
+// with PTP-synchronized clocks. Carries capture_ns (frame capture time)
+// and send_ns (RTP packet send time), each 8 bytes = 16 bytes total.
+struct SendTimestampNsData {
+  uint64_t capture_ns;  // CLOCK_REALTIME at frame capture
+  uint64_t send_ns;     // CLOCK_REALTIME at packet send
+};
+
+class SendTimestampNsExtension {
+ public:
+  using value_type = SendTimestampNsData;
+  static constexpr RTPExtensionType kId = kRtpExtensionSendTimestampNs;
+  static constexpr uint8_t kValueSizeBytes = 16;
+  static constexpr absl::string_view Uri() {
+    return RtpExtension::kSendTimestampNsUri;
+  }
+
+  static bool Parse(std::span<const uint8_t> data, SendTimestampNsData* out);
+  static size_t ValueSize(const SendTimestampNsData& /* data */) {
+    return kValueSizeBytes;
+  }
+  static bool Write(std::span<uint8_t> data, const SendTimestampNsData& ts);
+};
+
 }  // namespace webrtc
 #endif  // MODULES_RTP_RTCP_SOURCE_RTP_HEADER_EXTENSIONS_H_

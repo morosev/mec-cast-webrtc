@@ -904,6 +904,11 @@ WebRtcVideoEngine::GetRtpHeaderExtensions(
     result.emplace_back(RtpExtension::kVideoFrameTrackingIdUri, id,
                         RtpTransceiverDirection::kSendRecv);
   }
+
+  // SendTimestampNs for precise PTP-based delay measurement
+  result.emplace_back(RtpExtension::kSendTimestampNsUri, id++,
+                      RtpTransceiverDirection::kSendRecv);
+
   return result;
 }
 

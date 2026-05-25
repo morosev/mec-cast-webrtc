@@ -286,6 +286,12 @@ class RTC_EXPORT VideoFrame {
     processing_time_ = processing_time;
   }
 
+  // Encode duration in milliseconds (sender-side, carried via VideoTimingExtension)
+  std::optional<int64_t> encode_duration_ms() const {
+    return encode_duration_ms_;
+  }
+  void set_encode_duration_ms(int64_t ms) { encode_duration_ms_ = ms; }
+
   bool is_repeat_frame() const { return is_repeat_frame_; }
   void set_is_repeat_frame(bool is_repeat_frame) {
     is_repeat_frame_ = is_repeat_frame;
@@ -357,6 +363,7 @@ class RTC_EXPORT VideoFrame {
   // returned from the decoder.
   // Currently, not set for locally captured video frames.
   std::optional<ProcessingTime> processing_time_;
+  std::optional<int64_t> encode_duration_ms_;
   // Indicates if this is a "repeat frame" - i.e. a copy a previous frame,
   // inserted in order to make a video codec converge towards a stable quality
   // in cases where a capturer is using a variable frame rate and stops
