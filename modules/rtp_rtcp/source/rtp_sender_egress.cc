@@ -232,20 +232,21 @@ void RtpSenderEgress::SendPacket(std::unique_ptr<RtpPacketToSend> packet,
         env_.clock().ConvertTimestampToNtpTime(now)));
   }
   if (packet->HasExtension<SendTimestampNsExtension>()) {
-    struct timespec ts_rt, ts_mono;
+    struct timespec ts_rt;
     clock_gettime(CLOCK_REALTIME, &ts_rt);
-    clock_gettime(CLOCK_MONOTONIC, &ts_mono);
     uint64_t realtime_ns = static_cast<uint64_t>(ts_rt.tv_sec) * 1000000000ULL +
                            static_cast<uint64_t>(ts_rt.tv_nsec);
-    uint64_t monotonic_ns = static_cast<uint64_t>(ts_mono.tv_sec) * 1000000000ULL +
-                            static_cast<uint64_t>(ts_mono.tv_nsec);
-    // Compute capture_ns: convert monotonic capture_time to realtime
+    // Compute capture_ns: convert capture_time to realtime, with the offset
+    // taken against the clock capture_time is on -- WebRTC's own (`now`).
+    // That is CLOCK_MONOTONIC on Linux but not on macOS, where it stops
+    // during sleep and CLOCK_MONOTONIC does not: an offset taken against
+    // CLOCK_MONOTONIC put capture_ns days early on a Mac that had slept.
     uint64_t capture_ns = 0;
     if (packet->capture_time().IsFinite() && packet->capture_time().us() > 0) {
-      uint64_t capture_mono_ns = static_cast<uint64_t>(packet->capture_time().us()) * 1000ULL;
-      // realtime = monotonic + (realtime_now - monotonic_now)
-      int64_t rt_mono_offset = static_cast<int64_t>(realtime_ns) - static_cast<int64_t>(monotonic_ns);
-      capture_ns = static_cast<uint64_t>(static_cast<int64_t>(capture_mono_ns) + rt_mono_offset);
+      int64_t capture_clock_ns = packet->capture_time().us() * 1000;
+      // realtime = clock + (realtime_now - clock_now)
+      int64_t rt_clock_offset = static_cast<int64_t>(realtime_ns) - now.us() * 1000;
+      capture_ns = static_cast<uint64_t>(capture_clock_ns + rt_clock_offset);
     }
     SendTimestampNsData ts_data{capture_ns, realtime_ns};
     packet->SetExtension<SendTimestampNsExtension>(ts_data);
