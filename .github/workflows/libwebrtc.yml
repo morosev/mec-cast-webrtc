@@ -1,0 +1,157 @@
+# Prebuilt libwebrtc for the mec-cast media clients (Linux and macOS).
+#
+# Pushing a tag `webrtc-<anything>` builds this commit for every platform below
+# and attaches one archive per platform to a GitHub release of that tag, so a
+# client builds against a download instead of a ~20 GB checkout and hours of
+# compiling. mec-cast pins the tag and the archives' SHA-256 sums in
+# third_party/webrtc.lock and fetches them with `make fetch-libwebrtc`.
+#
+# Archive layout, libwebrtc-<platform>/:
+#   lib/libwebrtc.a      the `webrtc` target
+#   include/             every header of this tree, plus abseil and libyuv
+#   src/test/            the capture helpers the client compiles itself
+#   defines.txt          the target's preprocessor defines, from `gn desc`;
+#                        the client compiles with exactly these
+#   args.gn, BUILD_INFO  how and from what it was built
+#
+# Built with use_custom_libcxx=false: the library links against the platform's
+# own C++ standard library (libstdc++ on Linux, libc++ on macOS), so a client
+# compiles with an ordinary toolchain rather than Chromium's private libc++.
+name: libwebrtc
+
+on:
+  push:
+    tags: ["webrtc-*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Chromium ships its toolchain for x64 Linux hosts only, so arm64
+          # Linux is cross-compiled against Chromium's arm64 sysroot.
+          - {platform: linux-x64, runner: ubuntu-22.04, target_os: linux, target_cpu: x64}
+          - {platform: linux-arm64, runner: ubuntu-22.04, target_os: linux, target_cpu: arm64}
+          - {platform: macos-arm64, runner: macos-14, target_os: mac, target_cpu: arm64}
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    env:
+      WORK: ${{ github.workspace }}/../w
+    steps:
+      - name: Free disk space
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+
+      - name: depot_tools
+        run: |
+          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git \
+            "$RUNNER_TEMP/depot_tools"
+          echo "$RUNNER_TEMP/depot_tools" >> "$GITHUB_PATH"
+
+      # This commit and the dependencies its DEPS pins, without history.
+      - name: Sync
+        run: |
+          mkdir -p "$WORK" && cd "$WORK"
+          cat > .gclient <<EOF
+          solutions = [{
+            "name": "src",
+            "url": "https://github.com/${{ github.repository }}.git@${{ github.sha }}",
+            "deps_file": "DEPS",
+            "managed": False,
+            "custom_deps": {},
+          }]
+          target_os = ["${{ matrix.target_os }}"]
+          target_cpu = ["${{ matrix.target_cpu }}"]
+          EOF
+          gclient sync --no-history --shallow --revision "src@${{ github.sha }}"
+          df -h .
+
+      - name: Build
+        run: |
+          cd "$WORK/src"
+          extra=""
+          if [ "${{ matrix.target_os }}" = linux ]; then
+            extra="rtc_use_x11=false rtc_use_pipewire=false"
+          fi
+          gn gen out/r --args="
+            target_os=\"${{ matrix.target_os }}\"
+            target_cpu=\"${{ matrix.target_cpu }}\"
+            is_debug=false
+            is_component_build=false
+            symbol_level=0
+            treat_warnings_as_errors=false
+            use_custom_libcxx=false
+            rtc_include_tests=false
+            rtc_build_examples=false
+            rtc_build_tools=false
+            rtc_enable_protobuf=false
+            proprietary_codecs=true
+            ffmpeg_branding=\"Chrome\"
+            rtc_use_h264=true
+            $extra"
+          ninja -C out/r webrtc
+
+      - name: Package
+        run: |
+          cd "$WORK/src"
+          name="libwebrtc-${{ matrix.platform }}"
+          out="$WORK/$name"
+          mkdir -p "$out/lib" "$out/include" "$out/src/test"
+          cp out/r/obj/libwebrtc.a "$out/lib/"
+          # Headers of this tree, without the build output and without the
+          # third-party trees, which are added back selectively below.
+          find . \( -path ./out -o -path ./third_party -o -path ./.git \) -prune -o \
+            \( -name '*.h' -o -name '*.inc' \) -print | cpio -pdm --quiet "$out/include"
+          for t in third_party/abseil-cpp third_party/libyuv/include; do
+            find "$t" \( -name '*.h' -o -name '*.inc' \) -print | cpio -pdm --quiet "$out/include"
+          done
+          cp test/vcm_capturer.cc test/test_video_capturer.cc "$out/src/test/"
+          gn desc out/r //:webrtc defines > "$out/defines.txt"
+          cp out/r/args.gn "$out/"
+          {
+            echo "repository: ${{ github.repository }}"
+            echo "commit: ${{ github.sha }}"
+            echo "platform: ${{ matrix.platform }}"
+            echo "built: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "$out/BUILD_INFO"
+          cd "$WORK"
+          tar -cJf "$name.tar.xz" "$name"
+          shasum -a 256 "$name.tar.xz" > "$name.tar.xz.sha256"
+          ls -lh "$name.tar.xz"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libwebrtc-${{ matrix.platform }}
+          path: |
+            ${{ env.WORK }}/libwebrtc-${{ matrix.platform }}.tar.xz
+            ${{ env.WORK }}/libwebrtc-${{ matrix.platform }}.tar.xz.sha256
+          retention-days: 7
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/webrtc-')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          ls -lh dist
+          gh release create "$TAG" dist/* \
+            --repo "${{ github.repository }}" \
+            --title "$TAG" \
+            --notes "Prebuilt libwebrtc of ${{ github.sha }} for linux-x64, linux-arm64 and macos-arm64, built with use_custom_libcxx=false. See .github/workflows/libwebrtc.yml for the archive layout."
