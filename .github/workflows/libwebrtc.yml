@@ -8,15 +8,22 @@
 #
 # Archive layout, libwebrtc-<platform>/:
 #   lib/libwebrtc.a      the `webrtc` target
-#   include/             every header of this tree, plus abseil and libyuv
+#   lib/libc++.a         Chromium's libc++ (and libc++abi), which it links
+#   include/             every header of this tree, abseil, libyuv, and the
+#                        libc++ and libc++abi headers at their tree paths
+#   toolchain/           Chromium's clang and lld, with clang's own headers
 #   src/test/            the capture helpers the client compiles itself
 #   defines.txt          the target's preprocessor defines, from `gn desc`;
 #                        the client compiles with exactly these
 #   args.gn, BUILD_INFO  how and from what it was built
 #
-# Built with use_custom_libcxx=false: the library links against the platform's
-# own C++ standard library (libstdc++ on Linux, libc++ on macOS), so a client
-# compiles with an ordinary toolchain rather than Chromium's private libc++.
+# Built as Chromium builds it, with its own libc++ (std::__Cr). The client
+# compiles its WebRTC-facing code with the same clang and libc++ from this
+# archive, and its Node-facing code with the system compiler; the two meet
+# only at a C interface. use_custom_libcxx=false does not build: Chromium's
+# sysroot lacks C++20 library features WebRTC uses, and protobuf does not
+# compile against Apple's libc++. arm64 Linux is left out: Chromium has no
+# clang for arm64 Linux hosts, so a client there could not compile against it.
 name: libwebrtc
 
 on:
@@ -33,10 +40,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Chromium ships its toolchain for x64 Linux hosts only, so arm64
-          # Linux is cross-compiled against Chromium's arm64 sysroot.
           - {platform: linux-x64, runner: ubuntu-22.04, target_os: linux, target_cpu: x64}
-          - {platform: linux-arm64, runner: ubuntu-22.04, target_os: linux, target_cpu: arm64}
           - {platform: macos-arm64, runner: macos-14, target_os: mac, target_cpu: arm64}
     name: ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
@@ -89,7 +93,6 @@ jobs:
             is_component_build=false
             symbol_level=0
             treat_warnings_as_errors=false
-            use_custom_libcxx=false
             rtc_include_tests=false
             rtc_build_examples=false
             rtc_build_tools=false
@@ -99,14 +102,34 @@ jobs:
             rtc_use_h264=true
             $extra"
           ninja -C out/r webrtc
+          # The libc++ the library was built against, for the client to link.
+          ninja -C out/r buildtools/third_party/libc++ || true
+          ninja -C out/r buildtools/third_party/libc++abi || true
 
       - name: Package
         run: |
           cd "$WORK/src"
           name="libwebrtc-${{ matrix.platform }}"
           out="$WORK/$name"
-          mkdir -p "$out/lib" "$out/include" "$out/src/test"
+          mkdir -p "$out/lib" "$out/include" "$out/src/test" "$out/toolchain"
           cp out/r/obj/libwebrtc.a "$out/lib/"
+          llvm=third_party/llvm-build/Release+Asserts
+          objs=$(find out/r/obj/buildtools/third_party/libc++ out/r/obj/buildtools/third_party/libc++abi \
+            -name '*.o' 2>/dev/null || true)
+          [ -n "$objs" ] || { echo "no libc++ objects built" >&2; exit 1; }
+          # shellcheck disable=SC2086
+          "$llvm/bin/llvm-ar" rcs "$out/lib/libc++.a" $objs
+          # Chromium's libc++ headers have no extension: whole directories.
+          for d in buildtools/third_party/libc++ third_party/libc++/src/include \
+                   third_party/libc++abi/src/include; do
+            mkdir -p "$out/include/$d" && cp -R "$d/." "$out/include/$d/"
+          done
+          # The compiler: clang, lld and clang's own headers.
+          mkdir -p "$out/toolchain/bin" "$out/toolchain/lib"
+          for b in clang clang++ lld ld.lld ld64.lld llvm-ar; do
+            [ -e "$llvm/bin/$b" ] && cp -a "$llvm/bin/$b" "$out/toolchain/bin/"
+          done
+          cp -R "$llvm/lib/clang" "$out/toolchain/lib/"
           # Headers of this tree, without the build output and without the
           # third-party trees, which are added back selectively below.
           find . \( -path ./out -o -path ./third_party -o -path ./.git \) -prune -o \
@@ -116,6 +139,7 @@ jobs:
           done
           cp test/vcm_capturer.cc test/test_video_capturer.cc "$out/src/test/"
           gn desc out/r //:webrtc defines > "$out/defines.txt"
+          gn desc out/r //:webrtc cflags_cc > "$out/cflags_cc.txt" || true
           cp out/r/args.gn "$out/"
           {
             echo "repository: ${{ github.repository }}"
@@ -154,4 +178,4 @@ jobs:
           gh release create "$TAG" dist/* \
             --repo "${{ github.repository }}" \
             --title "$TAG" \
-            --notes "Prebuilt libwebrtc of ${{ github.sha }} for linux-x64, linux-arm64 and macos-arm64, built with use_custom_libcxx=false. See .github/workflows/libwebrtc.yml for the archive layout."
+            --notes "Prebuilt libwebrtc of ${{ github.sha }} for linux-x64 and macos-arm64, with Chromium's clang and libc++ to build against it. See .github/workflows/libwebrtc.yml for the archive layout."
