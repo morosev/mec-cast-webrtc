@@ -45,9 +45,11 @@ jobs:
     name: ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 360
-    env:
-      WORK: ${{ github.workspace }}/../w
     steps:
+      # A path without "..": upload-artifact refuses those.
+      - name: Work directory
+        run: echo "WORK=$RUNNER_TEMP/w" >> "$GITHUB_ENV"
+
       - name: Free disk space
         if: runner.os == 'Linux'
         run: |
